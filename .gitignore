@@ -1,0 +1,74 @@
+# --- OS ---
+.DS_Store
+.DS_Store?
+Thumbs.db
+Desktop.ini
+
+# --- IDE / editors ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Gradle / Java ---
+.gradle/
+build/
+out/
+bin/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+replay_pid*
+
+# Keep Gradle Wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# --- Node / npm ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.pnpm-store/
+dist/
+*.tsbuildinfo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Secrets / local env ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# --- Misc ---
+*.tmp
+*.temp
+*.bak
+*.orig
+.cache/
+coverage/
