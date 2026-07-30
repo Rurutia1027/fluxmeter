@@ -100,14 +100,9 @@ class UsageAggregateTest {
     @Test
     void calculateEventCostMicroFlatAllTokenCategories() {
         // gpt-4o + cache_read_multiplier=0.5
-        // 1000 <input token>*2.5 + 500<output token>*10 +
-        // 200 <cached read token>*2.5*0.5 +
-        // 50 <cached write token>*10 +
-        // 100<reasoning token>*2.5 = 8500
+        // 1000*2.5 + 500*10 + 200*2.5*0.5 + 50*10 + 100*2.5 = 8500
         assertEquals(8_500L, UsageAggregate.calculateEventCostMicro(openaiGpt4oAllCategoriesEvent()));
-
-
-        // text-embedding-3-small: 1_000_000<embedding token> * 0.02 = 20_000
+        // text-embedding-3-small: 1_000_000 * 0.02 = 20_000
         assertEquals(20_000L,
                 UsageAggregate.calculateEventCostMicro(openaiEmbeddingSmallEvent()));
     }
@@ -257,7 +252,7 @@ class UsageAggregateTest {
         TokenEvent event = new TokenEvent();
         event.setEventId("evt-openai-embed");
         event.setProvider("openai");
-        event.setModelId("text-embedded-3-small");
+        event.setModelId("text-embedding-3-small");
         event.setEmbeddingTokens(1_000_000);
         return event;
     }
