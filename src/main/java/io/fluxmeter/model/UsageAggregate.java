@@ -47,6 +47,7 @@ public class UsageAggregate implements Serializable {
     }
 
     public void addEvent(TokenEvent event, long monthlyTokensBefore) {
+        // Only dedup when eventId is present; null eventId still accumulates
         if (event.getEventId() != null) {
             if (seenEventIds == null) {
                 seenEventIds = new HashSet<>();
@@ -132,6 +133,8 @@ public class UsageAggregate implements Serializable {
     public long getCostMicro() { return costMicro; }
     public long getEventCount() { return eventCount; }
     public long getTotalLatencyMs() { return totalLatencyMs; }
+
+    public long getDeduplicatedCount() { return deduplicatedCount; }
 
     public double getAvgLatencyMs() {
         return eventCount > 0 ? (double) totalLatencyMs / eventCount : 0;
