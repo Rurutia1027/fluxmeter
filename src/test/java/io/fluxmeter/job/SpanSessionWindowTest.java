@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -65,7 +66,102 @@ class SpanSessionWindowTest {
         assertTrue(span.getCostUsd() > 0);
     }
 
+    @Test
+    void gapOverSixtySecondsSplitsIntoTwoSessionWindows() throws Exception {
+        // e1#timestamp and e2#timestamp's gap = 70s > window gap 60s
+        // which means flink operator receives the first event then in the coming 60s  =
+        // window gap no new coming events
+        // so , even though both of those two events shares same keyId(parent span id)
+        // e1, e2 will be arranged into two session windows, this can be verified via final
+        // sink array list size
 
+        runPipeline(List.of(
+                event("e1", "span_b", 0L, 10, 0, "gpt-4o-mini"),
+                event("e2", "span_b", 70_000L, 20, 0, "gpt-4o-mini"),
+                // trigger of close watermark
+                closer("close", 70_000L + GAP_MS + 1)
+        ));
+
+        assertEquals(2, CollectSink.values.size());
+        List<SpanAggregate> ordered = new ArrayList<>(CollectSink.values);
+        // sort final records via first event time field --> [e1, e2]
+        ordered.sort(Comparator.comparingLong(SpanAggregate::getFirstEventTime));
+
+        // should be 1, in session window 1 only e1 is added
+        assertEquals(1, ordered.get(0).getCallCount());
+
+        // e1 both first & last event time is 0
+        assertEquals(0L, ordered.get(0).getFirstEventTime());
+        assertEquals(0L, ordered.get(0).getLastEventTime());
+
+
+        // should be 2, in session window 2 only e2 is added
+        assertEquals(1, ordered.get(1).getCallCount());
+
+        // e2 both first & last event time is 70_000
+        assertEquals(70_000L, ordered.get(1).getFirstEventTime());
+        assertEquals(70_000L, ordered.get(1).getLastEventTime());
+    }
+
+
+    @Test
+    void differentParentSpansAggregateIndependently() throws Exception {
+        runPipeline(List.of(
+                event("e1", "span_x", 0L, 10, 0, "gpt-4o-mini"),
+                event("e2", "span_y", 1_000L, 20, 10, "gpt-4o-mini"),
+                event("e3", "span_x", 2_000L, 30, 20, "claude-sonnet-4"),
+                closer("close", 2_000L + GAP_MS + 1)
+        ));
+
+        // e1, e3 -> {span_x, [e1,e3]} -> sink
+        // e2 -> {span_y, [e2]} -> sink
+        // sink records -> 2
+
+        assertEquals(2, CollectSink.values.size());
+        SpanAggregate x = bySpanId("span_x");
+        SpanAggregate y = bySpanId("span_y");
+
+        assertEquals(2, x.getCallCount()); // e1, e3 addEvents twice
+        assertEquals(60, x.getTotalTokens());
+        assertEquals(0L, x.getFirstEventTime());
+        assertEquals(2_000L, x.getLastEventTime());
+
+        assertEquals(1, y.getCallCount()); // e2
+        assertEquals(30, y.getTotalTokens());
+    }
+
+    @Test
+    void fiveCallAcrossModelRollUpToOneSpan() throws Exception {
+        // same parentSpanId, mixed models, one session
+        List<TokenEvent> events = new ArrayList<>();
+        String[] models = {"gpt-4o-mini", "gpt-4o", "claude-sonnet-4", "gpt-4o-mini", "gpt-4o"};
+        long t = 0L;
+        for (int i = 0; i < 5; i++) {
+            events.add(event("e" + i, "agent_run_1", t, 100 + i, 10, models[i]));
+            t += 10_000L;  // 10s apart, well under 60s gap
+        }
+
+        // finally append close signal event
+        events.add(closer("close", t - 10_000L + GAP_MS + 1));
+
+        runPipeline(events);
+
+        // our operator will organize events into same window, when
+        // 1. they come with timestamp gap < GAP_MS (60s)
+        // 2. share the same parent span id
+
+        // {e0 ... e4} -> same window with key = "agent_run1" --> 1 sink record
+        assertEquals(1, CollectSink.values.size());
+        SpanAggregate span = CollectSink.values.get(0);
+        assertEquals("agent_run_1", span.getSpanId());
+        assertEquals(5, span.getCallCount());
+
+        // inputs 100...104 + 5 * 10 output = 560 total tokens
+        assertEquals(560, span.getTotalTokens());
+        assertEquals(0L, span.getFirstEventTime());
+        assertEquals(40_000L, span.getLastEventTime());
+        assertEquals(40_000L, span.getDurationMs());
+    }
 
 
     // --- private helper funcs ---
