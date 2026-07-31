@@ -1,10 +1,15 @@
 package io.fluxmeter.job;
 
 import io.fluxmeter.model.TokenEvent;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
+import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
+import org.apache.flink.streaming.util.ProcessFunctionTestHarnesses;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +38,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  */
 class MonthlyVolumesStampFunctionTest {
     private static final String BEFORE_KEY = UsageAggregateFunction.MONTHLY_VOLUME_BEFORE_KEY;
+
+    /** ValueState name — shared by harness tests. */
+    static final String MONTHLY_VOLUME_STATE = "monthlyVolumeTokens";
+
+    /** ValueState name — shared by harness tests. */
+    static final String BILLING_PERIOD_STATE = "billingPeriodMonth";
+
 
     @BeforeEach
     void clearSink() {
@@ -111,6 +123,48 @@ class MonthlyVolumesStampFunctionTest {
         // local fake flink job entry point
         env.execute("monthly-volume-stamp-function-test");
     }
+
+    /**
+     * Directly inspect both ValueStates via Flink's keyed process harness
+     * ({@code monthlyVolumeTokens} + {@code billingPeriodMonth}).
+     */
+    @Test
+    void harnessReadsBothValueStateAfterAdvanceAndMonthRoll() throws Exception {
+        MonthlyVolumeStampFunction fn = new MonthlyVolumeStampFunction();
+        try (KeyedOneInputStreamOperatorTestHarness<String, TokenEvent, TokenEvent> harness
+                     =
+                     ProcessFunctionTestHarnesses.forKeyedProcessFunction(
+                             fn,
+                             TokenEvent::getAggregationKey,
+                             Types.STRING
+                     ))  {
+            harness.open();
+
+            ValueState<Long> volume = fn.getRuntimeContext().getState(
+                    new ValueStateDescriptor<>(MONTHLY_VOLUME_STATE, Long.class));
+
+            ValueState<String> period = fn.getRuntimeContext().getState(
+                    new ValueStateDescriptor<>(BILLING_PERIOD_STATE, String.class));
+
+            // same agg key: cust_h | gpt-4o-mini
+            TokenEvent e1 = event("e1", "cust_h", "gpt-4o-mini", ts("2026-07-04T12:00:00Z"), 100);
+            harness.processElement(e1, e1.getTimestamp());
+            assertEquals(100L, volume.value());
+            assertEquals("2026-07", period.value());
+
+            TokenEvent e2 = event("e2", "cust_h", "gpt-4o-mini", ts("2026-07-04T12:01:00Z"), 50);
+            harness.processElement(e2, e2.getTimestamp());
+            assertEquals(150L, volume.value());
+            assertEquals("2026-07", period.value());
+
+            // monthly roll
+            TokenEvent aug = event("aug", "cust_h", "gpt-4o-mini", ts("2026-08-01T00:01:00Z"), 10);
+            harness.processElement(aug, aug.getTimestamp());
+            assertEquals(10L, volume.value());
+            assertEquals("2026-08", period.value());
+        }
+    }
+
 
     // extract list of events from sink result collections by providing customerId
     private static List<TokenEvent> forCustomer(String customerId) {
