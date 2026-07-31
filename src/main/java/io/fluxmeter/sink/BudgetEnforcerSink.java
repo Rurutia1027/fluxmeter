@@ -1,20 +1,19 @@
 package io.fluxmeter.sink;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.fluxmeter.model.UsageAggregate;
 import io.fluxmeter.util.TenantKeys;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
-
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -110,52 +109,7 @@ public class BudgetEnforcerSink extends RichSinkFunction<UsageAggregate> {
     @Override
     public void invoke(UsageAggregate agg, Context context) {
         try (Jedis jedis = pool.getResource()) {
-            String customerId = agg.getCustomerId();
-            String customerKey = TenantKeys.customerPrefix(agg.getTenantId(), customerId);
-            String modelKey = customerKey + ":model:" + agg.getModelId();
-            String budgetKey = TenantKeys.budgetPrefix(agg.getTenantId(), customerId);
-
-            String windowId = TenantKeys.windowId(agg.getTenantId(), customerId, agg.getModelId(), agg.getWindowStart());
-            String idempotencyKey = "applied:" + windowId;
-
-            @SuppressWarnings("unchecked")
-            java.util.List<String> result = (java.util.List<String>) jedis.eval(
-                    SINK_LUA_SCRIPT,
-                    23,
-                    idempotencyKey,
-                    customerKey + ":input_tokens",
-                    customerKey + ":output_tokens",
-                    customerKey + ":total_tokens",
-                    customerKey + ":event_count",
-                    modelKey + ":input_tokens",
-                    modelKey + ":output_tokens",
-                    modelKey + ":total_tokens",
-                    modelKey + ":cost_usd",
-                    customerKey + ":cost_usd",
-                    TenantKeys.globalKey(agg.getTenantId(), "total_tokens"),
-                    TenantKeys.globalKey(agg.getTenantId(), "input_tokens"),
-                    TenantKeys.globalKey(agg.getTenantId(), "output_tokens"),
-                    TenantKeys.globalKey(agg.getTenantId(), "total_events"),
-                    TenantKeys.globalKey(agg.getTenantId(), "total_cost_usd"),
-                    budgetKey + ":balance_usd",
-                    budgetKey + ":alert_threshold_usd",
-                    budgetKey + ":initial_balance_usd",
-                    TenantKeys.globalKey(agg.getTenantId(), "last_window_end"),
-                    customerKey + ":cache_read_tokens",
-                    customerKey + ":reasoning_tokens",
-                    budgetKey + ":total_deducted_usd",
-                    budgetKey + ":debt_usd",
-                    String.valueOf(agg.getInputTokens()),
-                    String.valueOf(agg.getOutputTokens()),
-                    String.valueOf(agg.getTotalTokens()),
-                    String.valueOf(agg.getEventCount()),
-                    String.valueOf(agg.getCostUsd()),
-                    String.valueOf(agg.getCacheReadTokens()),
-                    String.valueOf(agg.getReasoningTokens()),
-                    String.valueOf(DEFAULT_ALERT_THRESHOLD_PERCENT),
-                    String.valueOf(agg.getWindowEnd())
-            );
-
+            List<String> result = apply(jedis, agg);
             String status = result.get(0);
             if ("SKIP".equals(status) || "NONE".equals(status)) {
                 return;
@@ -163,11 +117,71 @@ public class BudgetEnforcerSink extends RichSinkFunction<UsageAggregate> {
 
             double newBalance = Double.parseDouble(result.get(1));
             if ("EXHAUSTED".equals(status)) {
-                emitAlert(customerId, "BUDGET_EXHAUSTED", newBalance, agg);
+                emitAlert(agg.getCustomerId(), "BUDGET_EXHAUSTED", newBalance, agg);
             } else if ("LOW".equals(status)) {
-                emitAlert(customerId, "BUDGET_LOW", newBalance, agg);
+                emitAlert(agg.getCustomerId(), "BUDGET_LOW", newBalance, agg);
             }
         }
+    }
+
+    /**
+     * Package-visible for Redis atomicity tests - same Lua path as the Flink sink.
+     *
+     * @return Lua status list: {@code [status, newBalance, oldBalance]} where status is
+     * SKIP / NONE / OK / LOW / EXHAUSTED
+     */
+    @SuppressWarnings("unchecked")
+    static List<String> apply(Jedis jedis, UsageAggregate agg) {
+        String customerId = agg.getCustomerId();
+        String customerKey = TenantKeys.customerPrefix(agg.getTenantId(), customerId);
+        String modelKey = customerKey + ":model:" + agg.getModelId();
+        String budgetKey = TenantKeys.budgetPrefix(agg.getTenantId(), customerId);
+
+        String windowId = TenantKeys.windowId(
+                agg.getTenantId(), customerId, agg.getModelId(), agg.getWindowStart());
+        String idempotencyKey = "applied:" + windowId;
+
+        return (List<String>) jedis.eval(
+                SINK_LUA_SCRIPT,
+                23,
+                idempotencyKey,
+                customerKey + ":input_tokens",
+                customerKey + ":output_tokens",
+                customerKey + ":total_tokens",
+                customerKey + ":event_count",
+                modelKey + ":input_tokens",
+                modelKey + ":output_tokens",
+                modelKey + ":total_tokens",
+                modelKey + ":cost_usd",
+                customerKey + ":cost_usd",
+
+                TenantKeys.globalKey(agg.getTenantId(), "total_tokens"),
+                TenantKeys.globalKey(agg.getTenantId(), "input_tokens"),
+                TenantKeys.globalKey(agg.getTenantId(), "output_tokens"),
+                TenantKeys.globalKey(agg.getTenantId(), "total_events"),
+                TenantKeys.globalKey(agg.getTenantId(), "total_cost_usd"),
+
+                budgetKey + ":balance_usd",
+                budgetKey + ":alert_threshold_usd",
+                budgetKey + ":initial_balance_usd",
+
+                TenantKeys.globalKey(agg.getTenantId(), "last_window_end"),
+                customerKey + ":cache_read_tokens",
+                customerId + ":reasoning_tokens",
+
+                budgetKey + ":total_deducted_usd",
+                budgetKey + ":debt_usd",
+
+                String.valueOf(agg.getInputTokens()),
+                String.valueOf(agg.getOutputTokens()),
+                String.valueOf(agg.getTotalTokens()),
+                String.valueOf(agg.getEventCount()),
+                String.valueOf(agg.getCostUsd()),
+                String.valueOf(agg.getCacheReadTokens()),
+                String.valueOf(agg.getReasoningTokens()),
+                String.valueOf(DEFAULT_ALERT_THRESHOLD_PERCENT),
+                String.valueOf(agg.getWindowEnd())
+        );
     }
 
     private void emitAlert(String customerId, String alertType, double remainingBalance,

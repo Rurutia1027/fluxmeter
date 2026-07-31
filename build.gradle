@@ -53,6 +53,11 @@ dependencies {
     testImplementation "org.apache.flink:flink-runtime:${flinkVersion}"
     testImplementation "org.apache.flink:flink-test-utils:${flinkVersion}"
     testImplementation "org.apache.flink:flink-clients:${flinkVersion}"
+
+    // Layer B I/O — ephemeral Redis (see docs/java-testcontainers.md Phase 1)
+    def testcontainersVersion = '1.20.4'
+    testImplementation "org.testcontainers:testcontainers:${testcontainersVersion}"
+    testImplementation "org.testcontainers:junit-jupiter:${testcontainersVersion}"
 }
 
 application {

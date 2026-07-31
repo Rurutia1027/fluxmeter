@@ -22,6 +22,9 @@ Each test targets a specific failure mode that would cause financial loss.
 
 **Test:** Set max_rpm=10. Send exactly 10 check requests (all allowed). Send 11th (denied). Wait 60s. Send 1 more (allowed again).
 
+**Planned:** Move Java Redis-gated sink tests to Testcontainers so CI always runs them --
+see [docs/java-testcontainers.md](../docs/java-testcontainers.md).
+
 ### 4. Budget Reserve/Reconcile Accuracy
 **Scenario:** Reserve $5, actual cost is $2. Balance must be `original - 2` (not `original - 5`).
 
