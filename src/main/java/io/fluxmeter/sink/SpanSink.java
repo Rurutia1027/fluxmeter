@@ -43,36 +43,38 @@ public class SpanSink extends RichSinkFunction<SpanAggregate> {
 
     @Override
     public void invoke(SpanAggregate span, Context context) {
-        if (span.getSpanId() == null || span.getSpanId().isEmpty()) {
-            return;
-        }
-
         try (Jedis jedis = pool.getResource()) {
-            String key = "span:" + span.getSpanId();
-
-            // Use SET (overwrite), not INCRBY. Session windows can fire multiple
-            // times (session merge, late data). Each fire contains the FULL aggregate
-            // for the span, not a delta. Overwriting is correct; incrementing double-counts.
-            Pipeline pipe = jedis.pipelined();
-            pipe.set(key + ":cost_usd", String.valueOf(span.getCostUsd()));
-            pipe.set(key + ":total_tokens", String.valueOf(span.getTotalTokens()));
-            pipe.set(key + ":call_count", String.valueOf(span.getCallCount()));
-            pipe.set(key + ":duration_ms", String.valueOf(span.getDurationMs()));
-            pipe.set(key + ":customer_id", span.getCustomerId());
-
-            // Set TTL on all span keys
-            pipe.expire(key + ":cost_usd", SPAN_TTL_SECONDS);
-            pipe.expire(key + ":total_tokens", SPAN_TTL_SECONDS);
-            pipe.expire(key + ":call_count", SPAN_TTL_SECONDS);
-            pipe.expire(key + ":duration_ms", SPAN_TTL_SECONDS);
-            pipe.expire(key + ":customer_id", SPAN_TTL_SECONDS);
-
-            // Add to customer's sorted set of spans (sorted by cost for top-N queries)
-            pipe.zadd(TenantKeys.customerPrefix(span.getTenantId(), span.getCustomerId()) + ":spans",
-                    span.getCostUsd(), span.getSpanId());
-
-            pipe.sync();
+            apply(jedis, span);
         }
+    }
+    static boolean apply(Jedis jedis, SpanAggregate span) {
+        if (span.getSpanId() == null || span.getSpanId().isEmpty()) {
+            return false;
+        }
+        String key = "span:" + span.getSpanId();
+
+        // Use SET (overwrite), not INCRBY. Session windows can fire multiple
+        // times (session merge, late data). Each fire contains the FULL aggregate
+        // for the span, not a delta. Overwriting is correct; incrementing double-counts.
+        Pipeline pipe = jedis.pipelined();
+        pipe.set(key + ":cost_usd", String.valueOf(span.getCostUsd()));
+        pipe.set(key + ":total_tokens", String.valueOf(span.getTotalTokens()));
+        pipe.set(key + ":call_count", String.valueOf(span.getCallCount()));
+        pipe.set(key + ":duration_ms", String.valueOf(span.getDurationMs()));
+        pipe.set(key + ":customer_id", span.getCustomerId());
+
+        // Set TTL on all span keys
+        pipe.expire(key + ":cost_usd", SPAN_TTL_SECONDS);
+        pipe.expire(key + ":total_tokens", SPAN_TTL_SECONDS);
+        pipe.expire(key + ":call_count", SPAN_TTL_SECONDS);
+        pipe.expire(key + ":duration_ms", SPAN_TTL_SECONDS);
+        pipe.expire(key + ":customer_id", SPAN_TTL_SECONDS);
+
+        // Add to customer's sorted set of spans (sorted by cost for top-N queries)
+        pipe.zadd(TenantKeys.customerPrefix(span.getTenantId(), span.getCustomerId()) +
+                        ":spans", span.getCostUsd(), span.getSpanId());
+        pipe.sync();
+        return true;
     }
 
     @Override
