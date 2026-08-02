@@ -13,7 +13,9 @@ Kubernetes default DNS suffix: **`svc.cluster.local`**.
 | Kafka brokers (headless) | `kafka-brokers`                       | `kafka-brokers.fluxmeter.svc.cluster.local`       | 9092                       | **Headless** (`clusterIP: None`)     | Same pattern for StatefulSet                  |
 | Flink REST (JM)          | set by Operator (often `<name>-rest`) | e.g. `fluxmeter-rest.fluxmeter.svc.cluster.local` | 8081                       | **ClusterIP**                        | Ingress / internal only                       |
 | ClickHouse               | `clickhouse`                          | `clickhouse.fluxmeter.svc.cluster.local`          | 8123 (HTTP), 9000 (native) | **ClusterIP**                        | Optional baseline; not billing SoR            |
-| Grafana                  | `grafana`                             | `grafana.fluxmeter.svc.cluster.local`             | 3000                       | **NodePort** or port-forward on kind | Ingress + auth                                |
+| Grafana          | `grafana`                             | `grafana.fluxmeter.svc.cluster.local`             | 3000                       | **NodePort 30300** on kind           | Ingress + auth                                |
+| Prometheus       | `prometheus`                          | `prometheus.fluxmeter.svc.cluster.local`          | 9090                       | **ClusterIP**                        | optional remote-write                         |
+| Tempo (traces)   | `tempo`                               | `tempo.fluxmeter.svc.cluster.local`               | 3200, **4317** (OTLP gRPC), 4318 | **ClusterIP**                   | same; no Jaeger — Grafana Explore → Tempo     |
 
 ## Why ClusterIP first
 
