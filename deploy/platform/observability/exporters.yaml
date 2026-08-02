@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: fluxmeter
+  labels:
+    app: redis-exporter
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+        app.kubernetes.io/part-of: fluxmeter
+        app.kubernetes.io/component: observability
+    spec:
+      containers:
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.58.0
+          env:
+            - name: REDIS_ADDR
+              value: redis://redis.fluxmeter.svc.cluster.local:6379
+          ports:
+            - name: metrics
+              containerPort: 9121
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: fluxmeter
+  labels:
+    app: redis-exporter
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: observability
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-exporter
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-exporter
+  namespace: fluxmeter
+  labels:
+    app: kafka-exporter
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-exporter
+        app.kubernetes.io/part-of: fluxmeter
+        app.kubernetes.io/component: observability
+    spec:
+      containers:
+        - name: kafka-exporter
+          image: danielqsj/kafka-exporter:v1.7.0
+          args:
+            - --kafka.server=kafka-bootstrap.fluxmeter.svc.cluster.local:9092
+          ports:
+            - name: metrics
+              containerPort: 9308
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-exporter
+  namespace: fluxmeter
+  labels:
+    app: kafka-exporter
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: observability
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka-exporter
+  ports:
+    - name: metrics
+      port: 9308
+      targetPort: metrics

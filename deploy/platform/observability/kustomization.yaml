@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fluxmeter
+resources:
+  - rbac.yaml
+  - prometheus-config.yaml
+  - prometheus.yaml
+  - exporters.yaml
+  - tempo.yaml
+  - grafana-datasources.yaml
+  - grafana.yaml
+configMapGenerator:
+  - name: grafana-dashboards
+    files:
+      - dashboards/platform-health.json
+      - dashboards/fluxmeter-metering.json
+generatorOptions:
+  disableNameSuffixHash: true
