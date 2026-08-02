@@ -17,3 +17,6 @@ spec:
     - name: native
       port: 9000
       targetPort: native
+    - name: metrics
+      port: 9363
+      targetPort: metrics

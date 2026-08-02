@@ -20,14 +20,65 @@ spec:
     execution.checkpointing.interval: "30000"
     restart-strategy: fixed-delay
     restart-strategy.fixed-delay.attempts: "3"
+    # Prometheus scrape for P2 platform health (port 9249)
+    metrics.reporters: prom
+    metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+    metrics.reporter.prom.port: "9249"
+    # Traces: Flink 1.18 has no native OTEL traces reporter (that lands in Flink 2.x
+    # flink-metrics-otel). Kind uses the OpenTelemetry Java agent → Tempo OTLP
+    # (see podTemplate JAVA_TOOL_OPTIONS / OTEL_*). No Jaeger.
   serviceAccount: flink
+  podTemplate:
+    spec:
+      initContainers:
+        - name: fetch-otel-agent
+          image: curlimages/curl:8.5.0
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              curl -fsSL -o /otel/opentelemetry-javaagent.jar \
+                https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.13.1/opentelemetry-javaagent.jar
+          volumeMounts:
+            - name: otel-agent
+              mountPath: /otel
+      containers:
+        - name: flink-main-container
+          ports:
+            - name: metrics
+              containerPort: 9249
+          env:
+            # Agent injects spans; export OTLP gRPC to Grafana Tempo (not Jaeger)
+            - name: JAVA_TOOL_OPTIONS
+              value: "-javaagent:/opt/otel/opentelemetry-javaagent.jar"
+            - name: OTEL_SERVICE_NAME
+              value: fluxmeter-flink
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=fluxmeter,deployment.environment=kind
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://tempo.fluxmeter.svc.cluster.local:4317
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_METRICS_EXPORTER
+              value: none
+            - name: OTEL_LOGS_EXPORTER
+              value: none
+          volumeMounts:
+            - name: otel-agent
+              mountPath: /opt/otel
+      volumes:
+        - name: otel-agent
+          emptyDir: {}
   jobManager:
     resource:
-      memory: "1024m"
+      memory: "1280m"
       cpu: 0.5
   taskManager:
     resource:
-      memory: "1536m"
+      memory: "1792m"
       cpu: 0.5
     replicas: 1
   # Uncomment when jar is loadable in-cluster:
