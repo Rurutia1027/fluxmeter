@@ -40,14 +40,22 @@ kubectl -n fluxmeter exec sts/clickhouse -- \
 Local UI (after port-forward): host `localhost`, HTTP `8123` / native `9000`, DB `fluxmeter`, user/password *
 *`default` / `default`**.
 
-## Production hardening (todo)
+## Production hardening (P3 — refine passwords)
 
-Kind keeps password plaintext in ConfigMap (`users.xml`) for local smoke only. **Do not ship that pattern to prod.**
+Kind keeps password plaintext in ConfigMap (`users.xml`) for **local smoke only**. **Do not ship that pattern to
+prod.**
 
-- Store CH credentials in a **Kubernetes Secret** (or Vault / external-secrets), mount as env or `users.d` file — never
-  plaintext in ConfigMap/Git.
-- Rotate passwords; disable open `networks` (`::/0`) except via NetworkPolicy / private CIDR.
-- Prefer TLS on HTTP/native endpoints behind mesh or ingress when exposed beyond the cluster.
+| Do                                                                                         | Don't                                      |
+|--------------------------------------------------------------------------------------------|--------------------------------------------|
+| Store CH credentials in a **Kubernetes Secret** (or Vault / external-secrets)              | Leave passwords in ConfigMap / Git         |
+| Mount as env or `users.d` file into the StatefulSet                                        | Bake prod passwords into image layers      |
+| Rotate passwords; restrict `networks` — no open `::/0` except via NetworkPolicy / private CIDR | Expose HTTP/native to the world unauthenticated |
+| Prefer TLS on HTTP (`8123`) / native (`9000`) behind mesh or ingress when exposed beyond the cluster | Assume ClusterIP alone is enough for multi-tenant prod |
+
+Kind may keep `default`/`default` until P3 lands; prod overlays must switch to Secret-held credentials before any
+shared/staging use.
+
+See plan: [k8s-deployment-plan.md](../../../docs/k8s-deployment-plan.md) § P3.
 
 ## Removed vs Shortlink
 
