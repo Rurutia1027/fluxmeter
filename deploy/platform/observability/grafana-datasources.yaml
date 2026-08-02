@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: observability
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus.fluxmeter.svc.cluster.local:9090
+        isDefault: true
+        editable: true
+        jsonData:
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: tempo
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo.fluxmeter.svc.cluster.local:3200
+        editable: true
+        jsonData:
+          httpMethod: GET
+          tracesToMetrics:
+            datasourceUid: prometheus
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          lokiSearch:
+            datasourceUid: ""
+      - name: Redis
+        type: redis-datasource
+        uid: redis
+        access: proxy
+        url: redis://redis.fluxmeter.svc.cluster.local:6379
+        editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provider
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: observability
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: FluxMeterPlatform
+        orgId: 1
+        folder: FluxMeter Platform
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false

@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: kafka
+spec:
+  serviceName: kafka-brokers
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+        app.kubernetes.io/part-of: fluxmeter
+        app.kubernetes.io/component: kafka
+    spec:
+      containers:
+        - name: kafka
+          image: apache/kafka:3.7.0
+          imagePullPolicy: IfNotPresent
+          command: [ "/bin/bash", "/opt/fluxmeter/start.sh" ]
+          ports:
+            - name: internal
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          env:
+            - name: CLUSTER_ID
+              value: fluxmeter-cluster-001
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xmx512m -Xms512m"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+            - name: start
+              mountPath: /opt/fluxmeter
+          resources:
+            requests:
+              cpu: 100m
+              memory: 768Mi
+            limits:
+              memory: 1536Mi
+          readinessProbe:
+            tcpSocket:
+              port: internal
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: internal
+            initialDelaySeconds: 60
+            periodSeconds: 20
+      volumes:
+        - name: start
+          configMap:
+            name: kafka-start
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 8Gi

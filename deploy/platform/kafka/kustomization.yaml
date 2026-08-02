@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fluxmeter
+resources:
+  - configmap-start.yaml
+  - service-headless.yaml
+  - kafka-bootstrap-service.yaml
+  - statefulset.yaml
+  # Apply topics Job after brokers are Ready (see README) — not in default apply:
+  # - topics-job.yaml
