@@ -1,0 +1,42 @@
+# Create FluxMeter topics after 3 brokers are Ready (RF=3).
+# Image: same as brokers — apache/kafka:3.7.0
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics-init
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: kafka
+spec:
+  backoffLimit: 8
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topics
+          image: apache/kafka:3.7.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BOOTSTRAP
+              value: kafka-bootstrap.fluxmeter.svc.cluster.local:9092
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              set -euo pipefail
+              echo "Waiting for brokers at $BOOTSTRAP"
+              for i in $(seq 1 60); do
+                /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server "$BOOTSTRAP" >/dev/null 2>&1 && break
+                sleep 5
+              done
+              /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --create --if-not-exists \
+                --topic token-events --partitions 24 --replication-factor 3 \
+                --config min.insync.replicas=2 --config retention.ms=2592000000
+              /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --create --if-not-exists \
+                --topic budget-alerts --partitions 6 --replication-factor 3 \
+                --config min.insync.replicas=2 --config retention.ms=604800000
+              /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --create --if-not-exists \
+                --topic token-events-dlq --partitions 6 --replication-factor 3 \
+                --config min.insync.replicas=2 --config retention.ms=2592000000
+              /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --list

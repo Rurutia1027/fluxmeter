@@ -1,0 +1,33 @@
+# Kind Kafka — apache/kafka:3.7.0 (same as docker-compose.full.yml), KRaft, 3 nodes
+# Manual image (Hub blocked?):
+#   docker pull apache/kafka:3.7.0
+#   kind load docker-image apache/kafka:3.7.0 --name fluxmeter
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-start
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: kafka
+data:
+  start.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    ORDINAL="${HOSTNAME##*-}"
+    export CLUSTER_ID="${CLUSTER_ID:-fluxmeter-cluster-001}"
+    export KAFKA_NODE_ID="${ORDINAL}"
+    export KAFKA_PROCESS_ROLES=broker,controller
+    export KAFKA_LISTENERS=INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+    export KAFKA_ADVERTISED_LISTENERS=INTERNAL://${HOSTNAME}.kafka-brokers.fluxmeter.svc.cluster.local:9092
+    export KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+    export KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
+    export KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
+    export KAFKA_CONTROLLER_QUORUM_VOTERS=0@kafka-0.kafka-brokers.fluxmeter.svc.cluster.local:9093,1@kafka-1.kafka-brokers.fluxmeter.svc.cluster.local:9093,2@kafka-2.kafka-brokers.fluxmeter.svc.cluster.local:9093
+    export KAFKA_LOG_DIRS=/var/lib/kafka/data
+    export KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3
+    export KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
+    export KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=2
+    export KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+    export KAFKA_NUM_PARTITIONS=24
+    exec /etc/kafka/docker/run

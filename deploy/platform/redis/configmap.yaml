@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: redis
+data:
+  redis.conf: |
+    # Production-shaped Redis for FluxMeter billing data.
+    # AOF + noeviction — never silently drop metering keys.
+    bind 0.0.0.0
+    protected-mode no
+    port 6379
+    dir /data
+    appendonly yes
+    appendfsync everysec
+    maxmemory 512mb
+    maxmemory-policy noeviction
+    # Kind-sized memory; raise for prod / ElastiCache (see production-deploy.md).
+  start.sh: |
+    #!/bin/sh
+    set -eu
+    CONF_SRC=/etc/redis/redis.conf
+    CONF=/data/redis.runtime.conf
+    cp "$CONF_SRC" "$CONF"
+
+    # redis-0 is primary; redis-1/2 replicate from it (3-node HA, single write endpoint).
+    HOSTNAME="$(hostname)"
+    if [ "$HOSTNAME" != "redis-0" ]; then
+      echo "replicaof redis-0.redis-headless.fluxmeter.svc.cluster.local 6379" >> "$CONF"
+    fi
+
+    exec redis-server "$CONF"

@@ -1,0 +1,56 @@
+# Run after ClickHouse StatefulSet is Ready. Idempotent CREATE IF NOT EXISTS.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-init
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: clickhouse
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: clickhouse-init
+          image: clickhouse/clickhouse-server:24.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CLICKHOUSE_HOST
+              value: clickhouse.fluxmeter.svc.cluster.local
+            - name: CLICKHOUSE_PORT
+              value: "9000"
+            - name: CLICKHOUSE_USER
+              value: default
+            - name: CLICKHOUSE_PASSWORD
+              value: default
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              set -euo pipefail
+              HOST="${CLICKHOUSE_HOST}"
+              PORT="${CLICKHOUSE_PORT}"
+              CLIENT=(clickhouse-client --host "$HOST" --port "$PORT" --user "${CLICKHOUSE_USER}" --password "${CLICKHOUSE_PASSWORD}")
+              echo "Waiting for ClickHouse at $HOST:$PORT ..."
+              for i in $(seq 1 60); do
+                "${CLIENT[@]}" -q "SELECT 1" >/dev/null 2>&1 && break
+                sleep 3
+              done
+              "${CLIENT[@]}" -q "SELECT 1" >/dev/null
+              echo "Connected."
+              echo "Running 01_create_db.sql..."
+              "${CLIENT[@]}" --multiquery < /scripts/01_create_db.sql
+              echo "Running 02_baseline.sql..."
+              "${CLIENT[@]}" --multiquery < /scripts/02_baseline.sql
+              echo "ClickHouse baseline init done."
+          volumeMounts:
+            - name: ddl
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: ddl
+          configMap:
+            name: clickhouse-init-ddl

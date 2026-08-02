@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-config
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: clickhouse
+data:
+  # Minimal listen-all override; rely on image defaults otherwise
+  listen.xml: |
+    <clickhouse>
+        <listen_host>0.0.0.0</listen_host>
+        <http_port>8123</http_port>
+        <tcp_port>9000</tcp_port>
+    </clickhouse>
+  # Empty password for kind (matches docker-compose.full.yml)
+  users.xml: |
+    <clickhouse>
+        <users>
+            <default>
+                <password></password>
+                <networks>
+                    <ip>::/0</ip>
+                </networks>
+                <profile>default</profile>
+                <quota>default</quota>
+                <access_management>1</access_management>
+            </default>
+        </users>
+    </clickhouse>

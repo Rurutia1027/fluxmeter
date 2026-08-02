@@ -1,0 +1,50 @@
+# Kind smoke: Operator-managed cluster, 1 JM + 1 TM, no S3.
+# Jar submit is optional — leave job omitted for "Operator + empty cluster" smoke,
+# or set jarURI once the fat jar is available via image/PVC.
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: fluxmeter
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: flink
+spec:
+  image: flink:1.18.1-java17
+  flinkVersion: v1_18
+  flinkConfiguration:
+    taskmanager.numberOfTaskSlots: "2"
+    state.backend: hashmap
+    # kind: local checkpoints (not durable across node loss)
+    state.checkpoints.dir: file:///tmp/flink-checkpoints
+    execution.checkpointing.interval: "30000"
+    restart-strategy: fixed-delay
+    restart-strategy.fixed-delay.attempts: "3"
+  serviceAccount: flink
+  jobManager:
+    resource:
+      memory: "1024m"
+      cpu: 0.5
+  taskManager:
+    resource:
+      memory: "1536m"
+      cpu: 0.5
+    replicas: 1
+  # Uncomment when jar is loadable in-cluster:
+  # job:
+  #   jarURI: local:///opt/flink/usrlib/fluxmeter.jar
+  #   entryClass: io.fluxmeter.job.TokenUsageAggregator
+  #   parallelism: 2
+  #   args:
+  #     - "--KAFKA_BROKERS=kafka-bootstrap.fluxmeter.svc.cluster.local:9092"
+  #     - "--REDIS_HOST=redis.fluxmeter.svc.cluster.local"
+  #     - "--CHECKPOINT_DIR=file:///tmp/flink-checkpoints"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flink
+  namespace: fluxmeter
+  labels:
+    app.kubernetes.io/part-of: fluxmeter
+    app.kubernetes.io/component: flink
