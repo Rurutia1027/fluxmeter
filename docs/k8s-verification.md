@@ -31,6 +31,7 @@ Run against the live cluster; mark N/A if that piece is not deployed.
 | Flink Operator    | Operator Ready; REST reachable                                                                | P1         |
 | ClickHouse (opt.) | `SELECT 1`; Kafka engine / MV against bootstrap DNS when enabled                              | P1         |
 | Grafana / scrape  | In-scope rows **green** (Redis · Kafka · Flink · CH · API as deployed)                        | P2         |
+| Tempo / traces    | Tempo Ready; Grafana Explore → Tempo finds `{resource.service.name="fluxmeter-flink"}` when Flink up | P2    |
 | Secrets           | Passwords from Secret (not ConfigMap); apps/platform mount `secretKeyRef` / `envFrom`         | P3         |
 | API               | `GET /health` → ok (Redis reachable, auth path if P3 on)                                      | P4         |
 | Flink job (Full)  | Job `RUNNING`; after small produce, lag drains; Redis keys + API reflect N events             | P4         |
