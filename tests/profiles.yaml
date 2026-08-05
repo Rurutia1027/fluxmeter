@@ -1,0 +1,116 @@
+# Test groups and deploy profiles
+# Source of truth for: scripts/run-test-report.sh
+# Docs: tests/contract/TEST_PLAN.md
+
+groups:
+  unit:
+    description: Pure logic; no live API
+    pytest_paths:
+      - tests/test_auth_unit.py
+      - tests/test_billing_export.py
+      - tests/test_billing_export_partners.py
+      - tests/test_hierarchy_reserve.py
+      - tests/test_api_key_budget.py
+      - tests/test_billing_dims.py
+      - tests/test_control_plane_models.py
+      - tests/test_tenant_keys.py
+      - tests/test_pricing_loader.py
+      - tests/test_pricing_validate.py
+      - tests/test_rerate_tier.py
+      - tests/test_phase2_billing.py
+      - tests/test_gateway.py
+    timeout_sec: 60
+
+  unit_redis:
+    description: Redis-backed unit / lite Lua
+    pytest_paths:
+      - tests/test_lite_aggregate_unit.py
+      - tests/test_rollup.py
+      - tests/test_usage_buckets.py
+      - tests/test_tier_e2e.py
+    timeout_sec: 60
+    requires: [ redis ]
+
+  java:
+    description: Gradle / JUnit
+    gradle: true
+    timeout_sec: 300
+
+  contract:
+    description: OpenAPI HTTP contract + core-path health
+    pytest_paths:
+      - tests/contract
+    pytest_mark: contract
+    timeout_sec: 120
+    requires: [ api ]
+    feeds_report: [ logic, deploy_health ]
+
+  lite_api:
+    description: Lite production and prod overlay against live API
+    pytest_paths:
+      - tests/test_lite_production.py
+      - tests/test_prod_overlay.py
+    timeout_sec: 120
+    requires: [ api, redis ]
+    feeds_report: [ logic, deploy_health ]
+
+  e2e_full:
+    description: Full streaming E2E (Kafka + Flink); deploy-health evidence for Full
+    pytest_paths:
+      - tests/test_integration.py
+      - tests/test_e2e_v2.py
+    pytest_mark: e2e
+    timeout_sec: 300
+    requires: [ api, kafka, flink ]
+    feeds_report: [ logic, deploy_health ]
+    # Not selected by ci-lite — required for docker-full / k8s-full sign-off
+
+  saas:
+    description: Optional control-plane / SaaS compose
+    pytest_paths:
+      - tests/test_control_plane.py
+    timeout_sec: 60
+    requires: [ api, control_plane ]
+    optional: true
+
+# profile → list of group ids (order = run order)
+profiles:
+  logic:
+    description: Offline correctness (no deploy-health)
+    groups: [ unit, java ]
+    optional_groups: [ unit_redis ]   # include if REDIS available
+    reports: [ logic ]
+
+  ci-lite:
+    description: Default PR/CI — fast; no Full e2e
+    groups: [ unit, java, contract ]
+    optional_groups: [ unit_redis ]
+    reports: [ logic, deploy_health ]
+    expected_health_mode: lite
+
+  docker-lite:
+    description: Local / compose Lite deploy verification
+    groups: [ contract, lite_api ]
+    optional_groups: [ unit_redis ]
+    reports: [ deploy_health ]
+    expected_health_mode: lite
+
+  k8s-lite:
+    description: Slim k8s Lite — same groups as docker-lite; set FLUXMETER_API
+    groups: [ contract, lite_api ]
+    reports: [ deploy_health ]
+    expected_health_mode: lite
+
+  docker-full:
+    description: Compose Full — contract + e2e_full as availability evidence
+    groups: [ contract, e2e_full ]
+    reports: [ deploy_health ]
+    expected_health_mode: full
+    require_groups: [ e2e_full ]      # deploy-health fails if e2e_full skipped/failed
+
+  k8s-full:
+    description: k8s Full — contract + e2e_full required for deploy sign-off
+    groups: [ contract, e2e_full ]
+    reports: [ deploy_health ]
+    expected_health_mode: full
+    require_groups: [ e2e_full ]
