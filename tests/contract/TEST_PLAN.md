@@ -79,3 +79,96 @@ k8s-full:    contract | e2e_full                 → deploy-health (full cluster
 
 ---
 
+## Pillar 1 - Contract suite (shared)
+
+### Layout
+
+```text
+tests/contract/
+  TEST_PLAN.md
+  README.md
+  conftest.py
+  test_health_contract.py
+  test_openapi_schema.py
+  test_ingest_contract.py
+  test_usage_contract.py
+  test_budget_contract.py
+  test_auth_contract.py
+  test_core_path_health.py
+  report_contract_coverage.py
+```
+
+### Cases (P0)
+
+1. `GET /heath` - 200; `mode  ∈ {lite,full}`.
+2. OpenAPI parses; P0 paths present.
+3. Ingest 202 / 4xx shapes.
+4. Usage smoke (Full may short-poll).
+5. API Key auth as implemented today.
+
+P1: batch limit, budget, optional schemathesis. Streaming replay details stay in `docs/runbooks/dlq-replay.md`.
+
+```bash
+FLUXMETER_API=http://127.0.0.1:8000 make test-contract
+# k8s:
+FLUXMETER_API=https://fluxmeter.example make test-contract 
+```
+
+---
+
+## Pillar 2 - Runner, reports, wiring
+
+### Runner
+
+```bash
+./scripts/run-test-report.sh --profile ci-lite
+./scripts/run-test-report.sh --profile docker-lite
+./scripts/run-test-report.sh --profile docker-full
+./scripts/run-test-report.sh --profile k8s-lite
+./scripts/run-test-report.sh --profile k8s-full   # contract + e2e_full → deploy-health
+./scripts/run-test-report.sh --profile logic
+```
+
+Make:
+
+```make
+test-contract:                          # group: contract
+test-report-logic:                      # profile: logic
+test-report PROFILE=ci-lite|docker-lite|docker-full|k8s-lite|k8s-full
+```
+
+Bring-up of compose/k8s is **outside** the runner (or optional flags later). Runner assumes `FLUXMETER_API` reachable
+when the profile includes `contract` / `lite_api` / `e2e_full`.
+
+### Reports (`reports/`)
+
+| Report               | File                              | Filled by                                                  |
+|----------------------|-----------------------------------|------------------------------------------------------------|
+| **A. Logic**         | `logic-report.json` (+ junit/xml) | Profiles that run `unit` / `java` / `unit_redis`           |
+| **B. Deploy health** | `deploy-health.json` (+ short md) | Any profile with `contract` and/or `e2e_full` / `lite_api` |
+
+`deploy-health.json` includes `profile`, `base_url`, `health`, `core_path`, `groups_run`, and for Full profiles an
+`e2e_full: pass|fail` field — that field is the **availability evidence** for k8s-full / docker-full.
+
+## Acceptance
+
+- [ ] `tests/profiles.yaml` lists groups ↔ paths and profiles ↔ groups
+- [ ] `scripts/run-test-report.sh --profile …` selects groups (no e2e in `ci-lite`)
+- [ ] `k8s-full` / `docker-full` **require** `e2e_full` for deploy-health success
+- [ ] `tests/contract/` P0 + markers; `make test-contract`
+- [ ] Dual reports under `reports/`
+- [ ] README documents profile matrix; link from [`../TEST_PLAN.md`](../TEST_PLAN.md)
+
+## Implementation order
+
+1. `profiles.yaml` + markers + runner stub (this branch).
+2. Contract P0 package + coverage.
+3. Wire existing paths into groups; emit dual reports.
+4. CI job = `--profile ci-lite` only; document post-deploy `k8s-full` / `docker-full`.
+
+---
+
+## One-liner
+
+**Same test groups, different deploy profiles** — CI stays Lite+contract; **Full (Docker or k8s) must run `e2e_full` as
+deploy-health proof.**
